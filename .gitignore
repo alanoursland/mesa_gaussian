@@ -1,3 +1,4 @@
 references/**
 **/__pycache__/**
 .claude/**
+src/results/**
