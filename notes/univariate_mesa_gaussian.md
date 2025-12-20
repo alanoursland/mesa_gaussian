@@ -145,4 +145,3 @@ Your mention of **Softplus** as a generalization is excellent.
 
 This file successfully effectively "sanitizes" the GMF. It strips away the biological "messiness" of the previous file and presents a clean, algebraic object ready for high-dimensional lifting.
 
-**Ready for the next file!**

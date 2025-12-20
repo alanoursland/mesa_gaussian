@@ -355,11 +355,3 @@ You have built a formidable structure:
 2. **Theory:** Constructed the Polyhedral Mesa Gaussian (PMG) as a rigorous probability density derived from ReLU networks.
 3. **Philosophy:** Inverted the interpretation of activation from "Presence" to "Distance from Surface".
 4. **Evidence:** Validated the geometric consequences (Polytopes) while honestly identifying the open question (Antipodal Pairs).
-
-**What is your next step?**
-Are you planning to:
-
-* **Draft the paper sections** (Introduction, Methods, etc.)?
-* **Design the experiments** to test the "Antipodal" prediction?
-* **Refine the "Simplex vs. Box" mathematical argument?**
-

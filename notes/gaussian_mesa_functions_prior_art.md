@@ -173,7 +173,3 @@ To strengthen the "Prior Art" and prepare for the generalization, you should add
 
 * **The Independence Argument:** The GMF works because ECG waves are distinct in time. To apply this to neural nets, you need features to be distinct in space.
 * **Citation:** **Hyvärinen, A., & Oja, E. (2000).** "Independent component analysis: algorithms and applications." *Neural Networks*. (Justifies the "search for independent mesas" in latent space).
-
-
-
-**Ready for the next document!**
