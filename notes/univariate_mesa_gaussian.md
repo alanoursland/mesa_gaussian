@@ -1,194 +1,101 @@
-# Empirical Evidence: Do Neural Networks Learn Antipodal Normal Pairs?
+# Gaussian Mesa Function via Mesa Mahalanobis Distance
 
-## The Prediction
+## Standard 1D Gaussian
 
-If neural networks learn Multivariate Mesa Gaussians (MMGs), we would expect to observe:
+The one-dimensional Gaussian function is:
 
-1. **Sets of orthogonal hyperplanes** (likely uninteresting — occurs naturally in high dimensions)
-2. **Pairs of hyperplanes with opposite-facing normals** (the distinctive prediction)
+$$G(x) = A \cdot e^{-\frac{1}{2}D_M^2}$$
 
-The second prediction is the key testable signature. If networks implement mesa functions (or absolute value operations), they should learn pairs of neurons where one detects "above threshold" and another detects "below threshold" along the same axis — effectively implementing:
+where the Mahalanobis distance in one dimension is:
 
-```
-|x - μ| = ReLU(x - μ) + ReLU(-(x - μ))
-```
+$$D_M = \frac{|x - \mu|}{\sigma}$$
 
-This requires two neurons with weight vectors pointing in opposite directions (antipodal normals).
+## ReLU Decomposition of Absolute Value
 
----
+The absolute value can be decomposed using the Rectified Linear Unit (ReLU) function:
 
-## Relevant Empirical Literature
+$$|z| = \text{ReLU}(z) + \text{ReLU}(-z)$$
 
-### 1. Incidental Polysemanticity and Benign Collisions
+where $\text{ReLU}(z) = \max(0, z)$.
 
-**Source**: "What Causes Polysemanticity?" (ICLR 2024 Workshop) — Anthropic-adjacent researchers
+This identity partitions the absolute value into left and right half-spaces:
+- When $z > 0$: $\text{ReLU}(z) = z$, $\text{ReLU}(-z) = 0$
+- When $z < 0$: $\text{ReLU}(z) = 0$, $\text{ReLU}(-z) = |z|$
+- When $z = 0$: both terms vanish
 
-Key finding about weight collisions during training:
+Applying this to the Mahalanobis distance:
 
-> "When this happens, there are two cases: (a) If W_ik and W_jk have **opposite signs**, we have W_i · W_j < 0, so nothing actually happens, since the ReLU clips this to 0. Let's call this a **benign collision**. (b) If W_ik and W_jk have the same sign, we have W_i · W_j > 0, and both weights will be under pressure to shrink..."
+$$D_M = \frac{\text{ReLU}(x - \mu) + \text{ReLU}(-x + \mu)}{\sigma}$$
 
-**Interpretation**: The paper observes that features with opposite-sign weights can coexist stably on the same neuron — a "benign collision." This is consistent with mesa-like behavior where opposite directions don't interfere because ReLU clips negative contributions.
+## Introducing the Mesa Gap
 
-However, this is about polysemanticity arising from training dynamics, not about networks deliberately learning antipodal pairs for functional reasons.
+To create a plateau of width $2\delta$ centered at $\mu$, we shift each ReLU activation point outward by $\delta$:
 
----
+$$D_{MM} = \frac{\text{ReLU}(x - \mu - \delta) + \text{ReLU}(-x + \mu - \delta)}{\sigma}$$
 
-### 2. Antipodal Feature Storage in Toy Models
+This yields three regions:
+- **Right tail** ($x > \mu + \delta$): $D_{MM} = \frac{x - \mu - \delta}{\sigma}$
+- **Plateau** ($\mu - \delta \leq x \leq \mu + \delta$): $D_{MM} = 0$
+- **Left tail** ($x < \mu - \delta$): $D_{MM} = \frac{\mu - \delta - x}{\sigma}$
 
-**Source**: "Sparse autoencoders find composed features in small toy models" (LessWrong, 2024)
+We call $D_{MM}$ the **Mesa Mahalanobis Distance**.
 
-Key observation:
+## Asymmetric Extension
 
-> "We find the same **antipodal feature storage** as Anthropic observed for anticorrelated features — and this makes sense! Recall that in our data setup, x1 and x2 are definitionally anticorrelated, and so too are y1 and y2."
+Allowing independent variance on each side:
 
-**Interpretation**: In toy models with explicitly anticorrelated features, networks do store them antipodally (pointing in opposite directions). This is exactly what we'd expect if the network is learning mesa-like bounded regions. When the data itself has anticorrelated structure, the network represents it with antipodal-normal geometry.
+$$D_{MM} = \frac{\text{ReLU}(x - \mu - \delta)}{\sigma_1} + \frac{\text{ReLU}(-x + \mu - \delta)}{\sigma_2}$$
 
-This is **supportive evidence** — but it's in toy models with designed anticorrelation.
+where:
+- $\sigma_1$ controls the spread of the right (descending) tail
+- $\sigma_2$ controls the spread of the left (ascending) tail
+- $\delta$ controls the half-width of the plateau
+- $\mu$ remains the center of the plateau
 
----
+## Norm Equivalence
 
-### 3. Feature Geometry in Sparse Autoencoders (COUNTER-EVIDENCE)
+The Mesa Mahalanobis Distance can be viewed as the L1-norm of a two-component vector:
 
-**Source**: "Empirical Insights into Feature Geometry in Sparse Autoencoders" (LessWrong, 2024)
+$$D_{MM} = \left\| \left( \frac{\text{ReLU}(x - \mu - \delta)}{\sigma_1}, \frac{\text{ReLU}(-x + \mu - \delta)}{\sigma_2} \right) \right\|_1$$
 
-Direct test of the antipodal hypothesis:
+Because the two ReLU components have disjoint support (at most one is nonzero for any $x$), the L1 and L2 norms coincide:
 
-> "We demonstrate that **subspaces with semantically opposite meanings within the GemmaScope series of Sparse Autoencoders are not pointing towards opposite directions**. Furthermore, subspaces that are pointing towards opposite directions are usually not semantically related."
+$$\| (a, 0) \|_1 = |a| = \| (a, 0) \|_2$$
 
-**Interpretation**: This is the most direct test I found, and it provides **counter-evidence**. When looking at semantic antonyms (happy/sad, good/bad), the corresponding SAE features are NOT antipodal. And when features ARE antipodal, they tend not to be semantically related.
+## Gaussian Mesa Function
 
-However, note the caveat: This tests semantic antonyms, not the specific structure predicted by mesa theory. The mesa prediction is about **constraint boundaries**, not semantic opposites. A mesa for "dog" wouldn't have an antipodal "anti-dog" feature — it would have features for "not-too-big," "not-too-small," "has-four-legs-within-tolerance," etc.
+The GMF is then expressed as:
 
----
+$$G(x) = A \cdot e^{-\frac{1}{2}D_{MM}^2}$$
 
-### 4. Equivariant Features and Symmetric Weights
+Expanding by region:
 
-**Source**: "Naturally Occurring Equivariance in Neural Networks" (Distill, 2020) — Olah et al.
+$$G(x) = \begin{cases} 
+A \cdot e^{-\frac{(x - \mu - \delta)^2}{2\sigma_1^2}}, & x > \mu + \delta \\[1em]
+A, & \mu - \delta \leq x \leq \mu + \delta \\[1em]
+A \cdot e^{-\frac{(x - \mu + \delta)^2}{2\sigma_2^2}}, & x < \mu - \delta
+\end{cases}$$
 
-Observations about weight symmetry in vision models:
+## Parameter Summary
 
-> "The equivariant behavior we observe in neurons is really a reflection of a deeper symmetry that exists in the weights of neural networks and the circuits they form."
+| Parameter | Description |
+|-----------|-------------|
+| $A$ | Amplitude (peak/plateau height) |
+| $\mu$ | Center of the plateau |
+| $\delta$ | Half-width of the plateau (total plateau width = $2\delta$) |
+| $\sigma_1$ | Standard deviation of the right tail |
+| $\sigma_2$ | Standard deviation of the left tail |
 
-> "Each curve is excited by curves in the same orientation and inhibited by those in the opposite."
+## Correspondence to Original GMF Notation
 
-**Interpretation**: Vision networks naturally learn features that come in symmetric groups (rotated versions of the same detector). The observation about "inhibited by those in the opposite" hints at paired-opposite structure, though in the context of orientation rather than bounded regions.
+The original GMF literature uses $\sigma_L$ for plateau length:
 
----
+$$\delta = \frac{\sigma_L}{2}$$
 
-### 5. Polytope Representations
+## Remarks
 
-**Source**: "The Geometry of Concepts" (arXiv 2410.19750, 2025) — Tegmark et al.
+1. **Unified form**: The Mesa Mahalanobis Distance provides a single closed-form expression that avoids explicit piecewise notation.
 
-> "Another work found that representations of hierarchically related concepts are orthogonal to each other while **categorical concepts are represented as polytopes**."
+2. **Differentiability**: The formulation inherits the non-differentiability of ReLU at the plateau boundaries. In practice, this poses no issues for curve fitting or signal processing applications.
 
-**Interpretation**: The finding that categories are represented as polytopes is highly consistent with the mesa framework. A polytope is exactly what you get from the intersection of half-spaces (ReLU constraints). This supports the general mesa framework even if it doesn't directly address the antipodal-normal question.
-
----
-
-### 6. Edge Detection and Positive/Negative Edges
-
-**Source**: Various CNN educational materials (Andrew Ng's lectures, etc.)
-
-Standard observation in CNNs:
-
-> "The 30 shown in yellow... corresponds to the three by three yellow region, where there are bright pixels on top and darker pixels on the bottom. And so it finds a strong positive edge there. And this -30 here corresponds to the red region, which is actually brighter on the bottom and darker on top. So that is a **negative edge**."
-
-**Interpretation**: Edge detectors naturally produce positive and negative responses for opposite edge polarities. A single filter detects both directions, but through opposite-signed outputs. This isn't quite the same as having two filters with opposite normals, but it shows the underlying symmetry in what networks learn to detect.
-
----
-
-## Synthesis
-
-### Evidence FOR antipodal-normal prediction:
-
-1. **Antipodal storage in toy models** when data has anticorrelated structure
-2. **Benign collisions** — opposite-signed features can coexist, suggesting the geometry is at least permitted
-3. **Polytope representations** — categories as polytopes implies bounded regions (mesa-like)
-4. **Equivariant circuits** show weight symmetries in trained networks
-
-### Evidence AGAINST (or complicating) the prediction:
-
-1. **Semantic antonyms are NOT antipodal** in SAE feature space
-2. **Antipodal features are semantically unrelated** — when opposite directions exist, they don't seem to represent "opposite" concepts
-
-### Key Distinction:
-
-The counter-evidence tests **semantic antonyms** (happy/sad). The mesa prediction is about **constraint boundaries** — paired hyperplanes that together define a bounded acceptable region. These are different:
-
-- Semantic antonyms: "dog" vs "cat" — different categories
-- Mesa boundaries: "fur-length > minimum" and "fur-length < maximum" — the same dimension, opposite constraints
-
-The empirical tests haven't directly addressed whether networks learn **paired threshold constraints** along the same feature dimension.
-
----
-
-## On Orthogonality Tests: Why They're Insufficient
-
-A natural test for MMG structure would be to look for sets of orthogonal hyperplanes. However, **lack of orthogonality is not informative**.
-
-### The Whitening Connection
-
-In the Mahalanobis distance framework (Oursland 2024), orthogonal principal components serve to whiten the data — to decorrelate and normalize variance across dimensions. The standard PCA decomposition Σ = VΛV^T gives an orthogonal whitening basis.
-
-But orthogonal bases are not the only whitening bases. Any matrix W satisfying WΣW^T = I will whiten the data. The set of such matrices forms a manifold, and orthogonal bases are just one point on it.
-
-### Local Whitening Bases
-
-More importantly for neural network analysis: whitening may be **local** rather than global. A network might learn:
-
-- Different whitening transforms for different regions of input space
-- Approximately whitening transforms that trade off decorrelation against other objectives
-- Hierarchical whitening where each layer partially whitens with respect to the previous layer's representation
-
-This means we should look for **local whitening structure**, not just global orthogonality:
-
-1. Within a polytope region, are the active hyperplane normals approximately whitening the local data distribution?
-2. Do the learned transforms approximate Mahalanobis normalization locally, even if the global weight matrix isn't orthogonal?
-3. Are there clusters of hyperplanes that together form a local whitening basis for their associated feature subspace?
-
-### Implications for Empirical Tests
-
-Testing for global orthogonality of weight vectors will likely fail — and that failure tells us nothing. The informative tests are:
-
-- **Local correlation structure**: Within activation regions, is the representation decorrelated?
-- **Variance normalization**: Do the learned scales (weight magnitudes) inversely track local variance?
-- **Non-orthogonal whitening**: Can the weight matrix be factored into a whitening transform composed with a rotation?
-
-The mesa framework predicts local Mahalanobis-like structure, which permits non-orthogonal hyperplanes as long as they collectively achieve local whitening.
-
----
-
-## Open Questions for Future Empirical Work
-
-1. **Test within-feature bounds**: For a monosemantic SAE feature, are there paired features that activate for "too much" and "too little" of the same underlying concept?
-
-2. **Look for antipodal normals explicitly**: In a trained network, do weight vectors come in near-antipodal pairs more often than chance? (Not semantic antonyms, but actual weight geometry.) Note: we deliberately avoid the term "mirror neurons" to distinguish hyperplane geometry from single-unit semantics.
-
-3. **Examine bounded regions**: For classification tasks, do the learned decision boundaries form closed polytopes (requiring opposite-facing hyperplanes) or open half-spaces?
-
-4. **Layer-by-layer analysis**: The mesa prediction is strongest for early layers doing feature extraction. Later layers might show different geometry.
-
-5. **Local whitening structure**: Within polytope regions, do the active constraints form an approximate whitening basis for the local data distribution? This is a more sensitive test than global orthogonality.
-
----
-
-## Conclusion
-
-The empirical record is mixed but not definitively against the mesa prediction:
-
-- The clearest counter-evidence (SAE antonym geometry) tests the wrong phenomenon — semantic opposites rather than constraint pairs.
-- The supportive evidence (antipodal storage, polytopes, benign collisions) is suggestive but from toy models or indirect observations.
-- **No one has directly tested** whether networks learn paired hyperplanes that together bound an acceptable region along a single dimension.
-
-This represents an opportunity for a novel empirical contribution: directly testing whether trained ReLU networks exhibit the antipodal-normal geometry predicted by the mesa framework.
-
----
-
-## Key Citations
-
-1. "What Causes Polysemanticity?" — ICLR 2024 Workshop (incidental polysemanticity, benign collisions)
-2. "Empirical Insights into Feature Geometry in Sparse Autoencoders" — LessWrong 2024 (antonym geometry)
-3. "Sparse autoencoders find composed features in small toy models" — LessWrong 2024 (antipodal storage)
-4. "Naturally Occurring Equivariance in Neural Networks" — Distill 2020 (weight symmetry)
-5. "The Geometry of Concepts: Sparse Autoencoder Feature Structure" — arXiv 2410.19750 (polytope representations)
-6. "Toy Models of Superposition" — Anthropic 2022 (geometric structure of features)
+3. **Generalization pathway**: The ReLU-based construction suggests natural extensions to higher dimensions and to soft-margin variants using smooth approximations to ReLU (e.g., softplus).

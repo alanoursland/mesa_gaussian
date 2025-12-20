@@ -1,4 +1,4 @@
-# Empirical Evidence: Do Neural Networks Learn Mirror-Pair Hyperplanes?
+# Empirical Evidence: Do Neural Networks Learn Antipodal Normal Pairs?
 
 ## The Prediction
 
@@ -29,7 +29,7 @@ Key finding about weight collisions during training:
 
 **Interpretation**: The paper observes that features with opposite-sign weights can coexist stably on the same neuron — a "benign collision." This is consistent with mesa-like behavior where opposite directions don't interfere because ReLU clips negative contributions.
 
-However, this is about polysemanticity arising from training dynamics, not about networks deliberately learning mirror pairs for functional reasons.
+However, this is about polysemanticity arising from training dynamics, not about networks deliberately learning antipodal pairs for functional reasons.
 
 ---
 
@@ -41,7 +41,7 @@ Key observation:
 
 > "We find the same **antipodal feature storage** as Anthropic observed for anticorrelated features — and this makes sense! Recall that in our data setup, x1 and x2 are definitionally anticorrelated, and so too are y1 and y2."
 
-**Interpretation**: In toy models with explicitly anticorrelated features, networks do store them antipodally (pointing in opposite directions). This is exactly what we'd expect if the network is learning mesa-like bounded regions. When the data itself has anticorrelated structure, the network represents it with mirror-pair geometry.
+**Interpretation**: In toy models with explicitly anticorrelated features, networks do store them antipodally (pointing in opposite directions). This is exactly what we'd expect if the network is learning mesa-like bounded regions. When the data itself has anticorrelated structure, the network represents it with antipodal-normal geometry.
 
 This is **supportive evidence** — but it's in toy models with designed anticorrelation.
 
@@ -81,7 +81,7 @@ Observations about weight symmetry in vision models:
 
 > "Another work found that representations of hierarchically related concepts are orthogonal to each other while **categorical concepts are represented as polytopes**."
 
-**Interpretation**: The finding that categories are represented as polytopes is highly consistent with the mesa framework. A polytope is exactly what you get from the intersection of half-spaces (ReLU constraints). This supports the general mesa framework even if it doesn't directly address the mirror-pair question.
+**Interpretation**: The finding that categories are represented as polytopes is highly consistent with the mesa framework. A polytope is exactly what you get from the intersection of half-spaces (ReLU constraints). This supports the general mesa framework even if it doesn't directly address the antipodal-normal question.
 
 ---
 
@@ -99,7 +99,7 @@ Standard observation in CNNs:
 
 ## Synthesis
 
-### Evidence FOR mirror-pair prediction:
+### Evidence FOR antipodal-normal prediction:
 
 1. **Antipodal storage in toy models** when data has anticorrelated structure
 2. **Benign collisions** — opposite-signed features can coexist, suggesting the geometry is at least permitted
@@ -162,7 +162,7 @@ The mesa framework predicts local Mahalanobis-like structure, which permits non-
 
 1. **Test within-feature bounds**: For a monosemantic SAE feature, are there paired features that activate for "too much" and "too little" of the same underlying concept?
 
-2. **Look for mirror hyperplanes explicitly**: In a trained network, do weight vectors come in near-antipodal pairs more often than chance? (Not semantic antonyms, but actual weight geometry.) Note: we deliberately avoid the term "mirror neurons" to distinguish hyperplane geometry from single-unit semantics.
+2. **Look for antipodal normals explicitly**: In a trained network, do weight vectors come in near-antipodal pairs more often than chance? (Not semantic antonyms, but actual weight geometry.) Note: we deliberately avoid the term "mirror neurons" to distinguish hyperplane geometry from single-unit semantics.
 
 3. **Examine bounded regions**: For classification tasks, do the learned decision boundaries form closed polytopes (requiring opposite-facing hyperplanes) or open half-spaces?
 
@@ -180,7 +180,7 @@ The empirical record is mixed but not definitively against the mesa prediction:
 - The supportive evidence (antipodal storage, polytopes, benign collisions) is suggestive but from toy models or indirect observations.
 - **No one has directly tested** whether networks learn paired hyperplanes that together bound an acceptable region along a single dimension.
 
-This represents an opportunity for a novel empirical contribution: directly testing whether trained ReLU networks exhibit the mirror-normal geometry predicted by the mesa framework.
+This represents an opportunity for a novel empirical contribution: directly testing whether trained ReLU networks exhibit the antipodal-normal geometry predicted by the mesa framework.
 
 ---
 
