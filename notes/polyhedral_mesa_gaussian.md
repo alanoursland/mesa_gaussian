@@ -300,3 +300,76 @@ For unit normals, $m(n - 1 + 3) + 1 = m(n + 2) + 1$ free parameters.
 ### ReLU-Mahalanobis Connection
 
 - Oursland, A. "Interpreting Neural Networks through Mahalanobis Distance." arXiv:2410.19352, 2024.
+
+---
+---
+
+## GEMINI FEEDBACK
+
+This file serves as the **"General Theory"** of your work. By relaxing the orthogonality constraint, you move from a **Signal Processing** model (fitting specific waves) to a **Geometric Primitive** (modeling convex sets with soft boundaries).
+
+The most powerful theoretical insight here is the link to **Hinge Loss**. You are effectively saying:
+
+> *"A Polyhedral Mesa Gaussian is the Boltzmann distribution of a Multi-Constraint SVM."*
+
+Here are the theoretical frameworks and citations that will solidify this "General" definition:
+
+### 1. Product of Experts (PoE)
+
+In your "Not a Mixture" section, you correctly identify that the probabilities multiply () rather than add. In machine learning theory, this architecture is explicitly known as a **Product of Experts**.
+
+* **The Theory:** A Mixture Model (sum) covers space by tiling it with independent patches. A Product of Experts (product) carves space by *intersecting* constraints. Your Polyhedral Mesa is a PoE where each "Expert" is a single hyperplane constraint .
+* **Recommended Citation:** **Hinton, G. E. (2002).** "Training products of experts by minimizing contrastive divergence." *Neural Computation*.
+* *Why it fits:* It provides the formal probabilistic framework for your "intersection of constraints" logic and validates why this is strictly different (and often more powerful for defining boundaries) than a Mixture of Gaussians.
+
+
+
+### 2. Energy-Based Models (EBMs) and Intractability
+
+You note that " generally has no closed form". This places your model squarely in the domain of **Energy-Based Models**.
+
+* **The Theory:** Since you cannot easily compute  (the partition function ), you cannot treat this as a generative density without expensive MCMC sampling. However, you *can* use it for **Discrimination** or **Ranking** (determining if a point is "in" or "out") using the unnormalized energy.
+* **Recommended Citation:** **LeCun, Y., et al. (2006).** "A tutorial on energy-based learning." *Predicting Structured Data*.
+* *Why it fits:* It legitimizes the "unnormalized" nature of your function. It argues that for decision boundaries (classification/detection), the normalization constant  is irrelevant, solving the "improper distribution" concern you raised.
+
+
+
+### 3. Log-Concave Densities
+
+You noted the property of **Convexity** for the negative log-likelihood. In statistics, this class of functions is known as **Log-Concave Distributions**.
+
+* **The Theory:** This is a highly privileged class of functions. Log-concavity guarantees that the distribution is unimodal (no local maxima) and, crucially, that efficient sampling algorithms (like the Langevin dynamics used in diffusion models) will converge rapidly.
+* **Recommended Citation:** **Lovász, L., & Vempala, S. (2007).** "The geometry of logconcave distributions and sampling algorithms." *Random Structures & Algorithms*.
+* *Why it fits:* It provides the rigorous proof that your "Polyhedral Mesa" is computationally well-behaved. It proves that despite the sharp corners and flat top, you can efficiently find the plateau or sample from it.
+
+
+
+### 4. The Quadratic Penalty Method
+
+Your formulation  is not just "similar" to SVMs; it is the **Quadratic Penalty Method** used in constrained optimization.
+
+* **The Theory:** To solve "minimize  subject to ", numerical solvers often convert the hard constraints into soft penalties exactly as you have done. Your "Mesa" is the maximum entropy distribution subject to these soft constraints.
+* **Recommended Citation:** **Nocedal, J., & Wright, S. J. (2006).** *Numerical Optimization*. (Chapter on Penalty and Augmented Lagrangian Methods).
+
+### Visualizing the "Corner Problem"
+
+You discuss the difference between L2, L1, and L-Infinity norms regarding "Over-penalizing corners". This is a subtle geometric point that benefits from visualization.
+
+The visual would clarify your table on "Distance Metric Variations":
+
+* **L2 (Standard):** Rounded corners (the "pill" shape).
+* **L-Infinity:** Sharp, square corners (perfect box).
+* **L1:** Diamond-like pinching at the axes (often undesirable for "mesas" as it erodes the corners).
+
+### Summary of the Citation Arc
+
+You now have a complete narrative arc for your paper:
+
+1. **Prior Art:** We need "Flat Tops" for ECG (Dubois, 2007).
+2. **Univariate Theory:** We build them using Rectified Distance (Vapnik's -insensitive loss).
+3. **Multivariate Theory:** We generalize to Hyper-Rectangles via PCA (Two-Piece Skew Normals).
+4. **Polyhedral Theory:** We generalize to arbitrary Polytopes (Hinton's Product of Experts + Log-Concave Geometry).
+
+This structure moves from **Application**  **Construction**  **Generalization**  **Abstraction**.
+
+**Ready for the next file!**

@@ -230,3 +230,70 @@ The prototype-as-region interpretation resonates with prototype theory in cognit
 ### Gaussian Mesa Functions
 
 - Dubois, R., Maison-Blanche, P., Quenet, B., Dreyfus, G. "Automatic ECG wave extraction in long-term recordings using Gaussian mesa function models and nonlinear probability estimators." *Computer Methods and Programs in Biomedicine*, 88(3):217-233, 2007.
+
+---
+---
+
+## GEMINI FEEDBACK
+
+This document serves as the **philosophical core** of your paper. You are moving from the mechanics ("How to build a Mesa") to the semantics ("What a Mesa *means*").
+
+The strongest theoretical lever you have here is the **Normalization Argument**. You effectively argue that the "Confidence" view (cosine similarity) is a misinterpretation of the algebra, whereas the "Distance" view is a literal reading of the affine transformation.
+
+Here is specific feedback to strengthen this section with the necessary theoretical connections and citations.
+
+### 1. The "Open World" Problem (Recognition by Exclusion)
+
+Your section on "Recognition by Exclusion" (class defined by what it is *not*) is the fundamental premise of **Open Set Recognition (OSR)**.
+
+* **The Theory:** Standard Softmax classifiers force every input into one of  classes (Closed World assumption). They cannot say "I don't know." Your "Mesa" approach naturally handles this: if an input falls outside *all* prototype regions (all ), it is "Unknown."
+* **Recommended Citation:** **Bendale, A., & Boult, T. E. (2016).** "Towards Open Set Deep Networks." *CVPR*.
+* *Why it fits:* They introduce "OpenMax," which explicitly replaces the Softmax layer with a distance-based logic (Weibull distributions) to reject unknown inputs. Your Polyhedral Mesa is a rigorous geometric foundation for what they attempted heuristically.
+
+
+
+### 2. Radial Basis Functions (RBF) vs. ReLUs
+
+Your contrast between "Point Prototypes" and "Region Prototypes" echoes the historical debate between **RBF Networks** and **Perceptrons**.
+
+* **The Theory:** RBF networks () use point prototypes. They failed to scale because high-dimensional space is too vast to cover with points ("Curse of Dimensionality"). ReLUs won because they use *hyperplanes* to slice space, which scales better.
+* **The Synthesis:** Your paper argues that deep ReLU networks essentially *reconstruct* RBF-like behavior (bounded regions) but using the scalable vocabulary of hyperplanes (Polytopes).
+* **Recommended Citation:** **Broomhead, D. S., & Lowe, D. (1988).** "Multivariable functional interpolation and adaptive networks." *Complex Systems*.
+* *Why it fits:* It provides the seminal RBF baseline to contrast against your "Polyhedral RBF" interpretation.
+
+
+
+### 3. Metric Learning & Contrastive Loss
+
+You argue that "Training learns boundaries... not templates". This is the explicit objective of **Metric Learning**.
+
+* **The Theory:** Contrastive Loss and Triplet Loss explicitly minimize intra-class distance and maximize inter-class distance. They are training the network to build exactly the "Mesa" structure you describe (compact cluster, empty space around it).
+* **Recommended Citation:** **Weinberger, K. Q., & Saul, L. K. (2009).** "Distance metric learning for large margin nearest neighbor classification." *JMLR*.
+* *Why it fits:* It proves that explicit distance minimization leads to Polyhedral-like decision boundaries (Voronoi tessellations).
+
+
+
+### 4. Hyperspherical Learning (The Normalization Debate)
+
+You discuss how normalization forces the "Confidence" view. There is a specific sub-field called **Hyperspherical Deep Learning** that argues *constraints* on magnitude are necessary to force the network to learn angular semantic separation.
+
+* **The Theory:** By fixing  and , the network *must* learn angular prototypes. Your counter-argument is that by *relaxing* this and allowing  to vary, the network gains the ability to represent "uncertainty" or "out-of-distribution" via magnitude (distance).
+* **Recommended Citation:** **Liu, W., et al. (2017).** "SphereFace: Deep Hypersphere Embedding for Face Recognition." *CVPR*.
+* *Why it fits:* It represents the "Steelman" version of the argument you are critiquing. Citing it shows you understand *why* people normalize, before you argue why the un-normalized "Distance" view is richer.
+
+
+
+### 5. Concept Bottleneck Models (CBMs)
+
+The "Prototype as Region" idea connects to modern interpretability work where neurons are aligned with human concepts.
+
+* **The Connection:** If a neuron represents "Stripes," it shouldn't just be a vector pointing at "Perfect Stripes." It should be a *constraint*: "Must have at least X amount of contrast." This supports your "Constraint Satisfaction" view of sparsity.
+* **Recommended Citation:** **Koh, P. W., et al. (2020).** "Concept Bottleneck Models." *ICML*.
+
+### Visualization Suggestion: The "Cone" vs. The "Mesa"
+
+To illustrate the "Normalization Problem," a diagram is crucial.
+
+* **View A (Confidence):** A limitless cone expanding from the origin. The further you go (magnitude), the more "confident" you are. This implies a "Super-Cat" (infinite magnitude) exists.
+* **View B (Mesa):** A bounded crystal. The "Cat" region is finite. Going too far in any direction (even the "right" one) eventually leads you out of the prototype region (e.g., into "cartoon cat" or "statue").
+

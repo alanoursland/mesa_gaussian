@@ -128,3 +128,52 @@ When citing GMF methodology, the primary reference should be:
 For applications specifically involving repolarization analysis or T-wave morphology:
 
 > Badilini F, et al. Automatic analysis of cardiac repolarization morphology using Gaussian mesa function modeling. J Electrocardiol. 2008;41(6):588-594.
+
+---
+---
+
+## GEMINI FEEDBACK
+
+This document serves as the **historical anchor** for your paper. By rooting your theory in established biomedical signal processing, you effectively preempt the criticism that you are "inventing math" just to fit a theory. Instead, you are showing that the "Mesa" geometry is a proven necessity for modeling biological signals.
+
+Here is specific feedback to optimize this document for your broader narrative, including the citations that will bridge the gap to your later theoretical sections.
+
+### 1. Highlight the "Piecewise Problem" (The Hook)
+
+The definition you provided from Dubois et al. is **explicitly piecewise** (using a `case` statement).
+
+* **Critique:** Mathematically, piecewise definitions are "clunky" to optimize and hard to generalize to high dimensions.
+* **The Opportunity:** Add a remark explicitly pointing this out. This creates the **tension** that your next document (Univariate Mesa) solves by providing a unified Rectified Mahalanobis formula.
+* **Drafting Suggestion:** Add a sentence like: *"While Dubois et al. defined the GMF piecewise for 1D time-series, this formulation is difficult to generalize to high-dimensional latent spaces where boundaries are not simple scalar thresholds."*
+
+### 2. Foreshadow the "Ridge" Connection
+
+You strictly define the domain as time (). However, your paper is about to jump to high-dimensional vector space ().
+
+* **The Fix:** Briefly mention that in a neural network, the time variable  is analogous to the **projection** of an input vector onto a weight vector ().
+* **Why:** This primes the reader to see the ECG wave not just as a "bump in time" but as a "bump along a feature direction," which is exactly what a neuron computes.
+
+### 3. Visual Strategy: The "Square Peg"
+
+Since this is the introduction of your geometric protagonist (the Mesa), a visual comparison is essential here to immediately differentiate it from the standard Bell Curve.
+
+* **Caption Idea:** *"The Standard Gaussian (left) forces a trade-off between peak width and slope. The Gaussian Mesa Function (right) decouples these properties, allowing for a 'flat top' (plateau) that models sustained activation—a geometry we will show is intrinsic to ReLU networks."*
+
+### 4. Recommended References (The Bridge)
+
+To strengthen the "Prior Art" and prepare for the generalization, you should add these specific citations:
+
+* **The Baseline to Beat:** You mention GMF improves on standard Gaussians, but you should cite the gold standard paper for Gaussian ECG modeling to show what GMF is replacing.
+* **Citation:** **McSharry, P. E., Clifford, G. D., Tarassenko, L., & Smith, L. A. (2003).** "A dynamical model for generating synthetic electrocardiogram signals." *IEEE Transactions on Biomedical Engineering*.
+
+
+* **The "Lifting" Math:** To justify taking a 1D function and applying it to a vector projection (), you need the theory of **Ridge Functions**.
+* **Citation:** **Pinkus, A. (2015).** *Ridge Functions*. Cambridge University Press. (This provides the rigorous justification for "lifting" a 1D GMF into ).
+
+
+* **The Independence Argument:** The GMF works because ECG waves are distinct in time. To apply this to neural nets, you need features to be distinct in space.
+* **Citation:** **Hyvärinen, A., & Oja, E. (2000).** "Independent component analysis: algorithms and applications." *Neural Networks*. (Justifies the "search for independent mesas" in latent space).
+
+
+
+**Ready for the next document!**

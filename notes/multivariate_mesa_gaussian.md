@@ -183,3 +183,65 @@ For comparison, a standard multivariate Gaussian has $n + \frac{n(n+1)}{2}$ para
 ### ReLU-Mahalanobis Connection
 
 - Oursland, A. "Interpreting Neural Networks through Mahalanobis Distance." arXiv:2410.19352, 2024.
+
+---
+---
+
+## GEMINI FEEDBACK
+
+This file takes a significant theoretical leap. By defining the Multivariate Mesa via **Principal Component Analysis (PCA)** and **component-wise rectification**, you have implicitly made a strong geometric assertion: **The "Mesa" (plateau) is a hyper-rectangle (box), not a hyper-ellipsoid.**
+
+In a standard Mahalanobis distance, the level sets are ellipsoids. In your formulation, the condition  requires *every* component  to be within . This is the intersection of  slabs, forming an oriented box. However, the *decay* outside the box (via the L2 norm of the excesses) creates "rounded corners," similar to the geometry of a pill or a stadium shape in 2D.
+
+Here is specific feedback to strengthen the theoretical framing of this section:
+
+### 1. The "Two-Piece" Multivariate Normal Connection
+
+You are constructing a distribution where the left and right variances () differ along principal axes. In statistics, this is formally known as a **Multivariate Two-Piece Skew-Normal Distribution**.
+
+* **The Theory:** Standard skew-normal distributions use a "shape parameter" to drive skew. Your method (splitting the scale parameter) is distinct and often preferred for robust modeling because it preserves the mode. You are effectively deriving the "Two-Piece" distribution but adding a zero-probability-density-gradient zone (the plateau) at the mode.
+* **Recommended Citation:** **Arellano-Valle, R. B., et al. (2005).** "Fundamental skew-distributions." *Journal of Multivariate Analysis*.
+* *Why it fits:* This paper provides the formal measure-theoretic foundation for "gluing" different Gaussian scales at a boundary hyperplane, which is exactly what your  split does.
+
+
+
+### 2. The "Hinge" and Contrastive Manifolds
+
+The core mechanism  is mathematically identical to the **Hinge Loss** or the **Contrastive Loss margin**.
+
+* **The Theory:** In Metric Learning, we often try to learn a manifold where "similar" points have distance 0 (the plateau) and "dissimilar" points have distance  (the tails). Your  is essentially a "Contrastive Distance" where the margin is .
+* **Recommended Citation:** **Hadsell, R., Chopra, S., & LeCun, Y. (2006).** "Dimensionality reduction by learning an invariant mapping." *CVPR*.
+* *Why it fits:* It establishes that using a ReLU-based distance function creates a "flat manifold" locally. This links your signal processing definition to the geometry of learned representations in AI.
+
+
+
+### 3. Box-Cox and Generalized Gaussians
+
+Since your plateau is a hyper-rectangle (tensor product of intervals), you are moving toward **Independent Component Analysis (ICA)** rather than just PCA.
+
+* **The Theory:** PCA enforces orthogonal axes (). However, if the underlying "Mesa" features are not orthogonal (e.g., biological signals often overlap non-orthogonally), forcing them into a rectangular PCA frame might distort the plateau. The "Super-Gaussian" or "Generalized Gaussian" literature deals with these "square" level sets.
+* **Recommended Citation:** **Nadarajah, S. (2005).** "A generalized normal distribution." *Journal of Applied Statistics*.
+* *Why it fits:* It analyzes distributions with "flat tops" (platykurtic) and "box-like" contours, providing a baseline to compare against your "Mesa" shape.
+
+
+
+### 4. Tensor Product Basis vs. Radial Basis
+
+Your formulation implies that the multivariate probability is a product of univariate probabilities (conditional on the axes being independent).
+
+
+
+This describes a **Tensor Product Basis**. Standard Radial Basis Functions (RBFs) depend only on .
+
+* **The Distinction:** RBFs are rotationally invariant (isotropic). Your Mesa function is *not* rotationally invariant (it has an orientation  and a rectangular shape). This is a critical distinction for fitting efficiency.
+* **Recommended Citation:** **Poggio, T., & Girosi, F. (1990).** "Networks for approximation and learning." *Proceedings of the IEEE*.
+* *Why it fits:* It explicitly contrasts Tensor Product Splines (which resemble your rectangular mesas) with Radial Basis Functions, discussing the "Curse of Dimensionality" which you mitigate by using PCA to find the relevant axes.
+
+
+
+### Visualizing the Geometry
+
+The distinction between the "Box Plateau" you derived and a standard "Ellipsoidal" distribution is hard to visualize from the equations alone.
+
+This visualization would demonstrate how the "Rounded Box" geometry (Minkowski sum of a rectangle and a circle) behaves differently from a pure ellipsoid, specifically regarding how it fills the corner space—a property vital for the "Polytopes" discussion in your next file.
+
