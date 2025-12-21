@@ -1,7 +1,18 @@
 """
-This experiment tests whether norm-aggregated ReLU networks exhibit robustness
-inside learned polytope plateaus and sensitivity near polytope boundaries,
-as predicted by the Polyhedral Mesa Gaussian interpretation.
+Experiment: Polytope Boundary Sensitivity with Loss Variants
+
+This experiment extends the original boundary sensitivity analysis to test
+whether mesa-like geometry (flat interior, sharp boundary) arises from:
+
+    (A) Architectural constraint (norm aggregation), or
+    (B) Optimization incentive (loss function), or
+    (C) Both / neither
+
+Models compared:
+    1. Norm model (CE loss) - baseline with architectural bias
+    2. MLP baseline (CE loss) - baseline without architectural bias
+    3. MLP + gradient penalty - test if loss can induce flatness
+    4. Norm model + gradient penalty - control for interaction effects
 
 Run as a script from the project root:
     python src/exp_polytope_boundary_sensitivity.py
@@ -11,13 +22,17 @@ from __future__ import annotations
 import argparse
 import csv
 import os
+from dataclasses import dataclass
 from datetime import datetime
 from functools import partial
+from typing import Callable
 
 import numpy as np
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
-from blocks import PolytopeClassifier, MLPBaseline
+from lp_norm_layer import LpNormLayer
 from experiment_utils import (
     BandStats,
     EpsSummary,
@@ -40,26 +55,212 @@ from polytope_utils import (
 )
 
 
+# ============================================================================
+# Model Definitions
+# ============================================================================
+
+class PolytopeClassifier(nn.Module):
+    """Norm-based binary classifier: Linear -> ReLU -> NormLayer -> Linear head."""
+    def __init__(self, in_dim: int, hidden_dim: int, learn_p: bool = True, p_init: float = 2.0):
+        super().__init__()
+        self.lin = nn.Linear(in_dim, hidden_dim)
+        self.norm = LpNormLayer(hidden_dim, out_dim=1, learn_p=learn_p, p_init=p_init)
+        self.head = nn.Linear(1, 1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if torch.isnan(x).any():
+            raise ValueError("NaN in x") 
+        v = F.relu(self.lin(x))
+        if torch.isnan(v).any():
+            print(f"self.lin.weight: {self.lin.weight}")
+            print(f"self.lin.bias: {self.lin.bias}")
+            raise ValueError("lin produced nan output.") 
+        d = self.norm(v)  # (batch, 1)
+        logits = self.head(d)
+        return logits
+
+    def internal_scalar(self, x: torch.Tensor) -> torch.Tensor:
+        v = F.relu(self.lin(x))
+        return self.norm(v).squeeze(-1)
+    
+    def p_mean(self):
+        return self.norm.p.mean().detach().cpu()
+    
+    def p_variance(self):
+        return self.norm.p.var(unbiased=False).detach().cpu()
+
+
+class MLPBaseline(nn.Module):
+    """MLP baseline: Linear -> ReLU -> Linear -> Linear head."""
+    def __init__(self, in_dim: int, hidden_dim: int):
+        super().__init__()
+        self.lin = nn.Linear(in_dim, hidden_dim)
+        self.agg = nn.Linear(hidden_dim, 1)
+        self.head = nn.Linear(1, 1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        v = F.relu(self.lin(x))
+        d = self.agg(v)  # (batch, 1)
+        logits = self.head(d)
+        return logits
+
+    def internal_scalar(self, x: torch.Tensor) -> torch.Tensor:
+        v = F.relu(self.lin(x))
+        return self.agg(v).squeeze(-1)
+
+
+# ============================================================================
+# Model Configuration
+# ============================================================================
+
+@dataclass
+class ModelConfig:
+    """Configuration for a model variant in the experiment."""
+    name: str
+    model_type: str  # "norm" or "mlp"
+    loss_type: str  # "ce" or "grad_penalty"
+    lambda_grad: float = 0.1
+
+    def build_model(self, in_dim: int, hidden_dim: int) -> nn.Module:
+        if self.model_type == "norm":
+            return PolytopeClassifier(in_dim, hidden_dim, learn_p=True, p_init=2.0)
+        elif self.model_type == "mlp":
+            return MLPBaseline(in_dim, hidden_dim)
+        else:
+            raise ValueError(f"Unknown model_type: {self.model_type}")
+
+    def get_internal_fn(self) -> Callable[[nn.Module, torch.Tensor], torch.Tensor]:
+        if self.model_type == "norm":
+            return get_internal_fn_norm
+        else:
+            return get_internal_fn_mlp
+
+
 def get_internal_fn_norm(model, x):
     """Get internal scalar for norm model."""
-    import torch.nn.functional as F
-    v = F.relu(model.block.lin(x))
-    return model.block.norm(v)
+    return model.internal_scalar(x)
 
 
 def get_internal_fn_mlp(model, x):
     """Get internal scalar for MLP model."""
-    import torch.nn.functional as F
-    v = F.relu(model.lin(x))
-    return model.agg(v).squeeze(-1)
+    return model.internal_scalar(x)
 
+
+# ============================================================================
+# Probing Infrastructure
+# ============================================================================
+
+@dataclass
+class ModelState:
+    """Holds a trained model and its cached probe data."""
+    config: ModelConfig
+    model: nn.Module
+    logits_orig: np.ndarray
+    internal_orig: np.ndarray
+    grad_norms: np.ndarray
+    results: ModelProbeResults
+
+
+def prepare_model(
+    config: ModelConfig,
+    x_train: np.ndarray,
+    y_train: np.ndarray,
+    probe_points: np.ndarray,
+    epochs: int,
+    device: torch.device,
+    rng: np.random.Generator,
+) -> ModelState:
+    """Build, train, and prepare a model for probing."""
+    in_dim = x_train.shape[1]
+    hidden_dim = 64
+
+    # Build and train
+    model = config.build_model(in_dim, hidden_dim)
+    train_model(
+        model, x_train, y_train, epochs,
+        device=device, rng=rng, model_name=config.name,
+        loss_type=config.loss_type, lambda_grad=config.lambda_grad,
+    )
+
+    # Get original outputs
+    model.eval()
+    with torch.no_grad():
+        x_t = torch.from_numpy(probe_points).to(device)
+        logits_orig = model(x_t).cpu().numpy().reshape(-1)
+        internal_orig = model.internal_scalar(x_t).cpu().numpy().reshape(-1)
+
+    # Compute gradient norms
+    internal_fn = config.get_internal_fn()
+    grad_norms = compute_gradient_norms(model, probe_points, internal_fn, device)
+
+    return ModelState(
+        config=config,
+        model=model,
+        logits_orig=logits_orig,
+        internal_orig=internal_orig,
+        grad_norms=grad_norms,
+        results=ModelProbeResults(name=config.name),
+    )
+
+
+def probe_model_at_eps(
+    state: ModelState,
+    probe_points: np.ndarray,
+    probe_dists: np.ndarray,
+    true_flip_rates: np.ndarray,
+    eps_val: float,
+    n_perturb: int,
+    min_interior: int,
+    rng: np.random.Generator,
+    device: torch.device,
+) -> EpsSummary:
+    """Probe a model at a single epsilon value and return summary."""
+    flip_rates, delta_logits, delta_internal = probe_perturbations(
+        state.model, probe_points, state.logits_orig, state.internal_orig,
+        eps_val, n_perturb, rng, device
+    )
+
+    # Partition by distance bands
+    boundary_idx = (probe_dists >= 0.0) & (probe_dists <= eps_val)
+    interior_idx = probe_dists >= (5.0 * eps_val)
+
+    interior_count = int(np.sum(interior_idx))
+    interior_ok = interior_count >= min_interior
+
+    # Compute band statistics
+    boundary_stats = BandStats.from_arrays(
+        boundary_idx, flip_rates, true_flip_rates,
+        delta_logits, delta_internal, state.grad_norms
+    )
+    interior_stats = BandStats.from_arrays(
+        interior_idx, flip_rates, true_flip_rates,
+        delta_logits, delta_internal, state.grad_norms
+    ) if interior_ok else BandStats.nan()
+
+    summary = EpsSummary(
+        eps=eps_val,
+        boundary_stats=boundary_stats,
+        interior_stats=interior_stats,
+        interior_ok=interior_ok,
+    )
+
+    # Store for final plotting
+    state.results.probe_dists = probe_dists
+    state.results.flip_rates = flip_rates
+    state.results.true_flip_rates = true_flip_rates
+
+    return summary
+
+
+# ============================================================================
+# Main Experiment
+# ============================================================================
 
 def run_experiment(
     in_dim: int = 2,
     n_faces: int = 6,
     n_train: int = 2000,
     n_test: int = 1000,
-    hidden_dim: int = 64,
     epochs: int = 200,
     eps: float = 0.1,
     n_perturb: int = 40,
@@ -68,6 +269,7 @@ def run_experiment(
     tau: float = 1.0,
     eps_list: list[float] | None = None,
     min_interior: int = 20,
+    lambda_grad: float = 0.1,
 ):
     rng = np.random.default_rng(seed)
     torch.manual_seed(seed)
@@ -79,70 +281,66 @@ def run_experiment(
     x_train, y_train = generate_polytope_dataset(normals, radii, n_train, rng=rng)
     x_test, _ = generate_polytope_dataset(normals, radii, n_test, rng=rng)
 
-    # Build and train norm model
-    norm_model = PolytopeClassifier(in_dim, hidden_dim, learn_p=True, p_init=2.0)
-    train_model(
-        norm_model, x_train, y_train, epochs,
-        device=device, rng=rng, model_name="norm"
-    )
-
-    # Build and train MLP baseline
-    mlp_model = MLPBaseline(in_dim, hidden_dim)
-    train_model(
-        mlp_model, x_train, y_train, epochs,
-        device=device, rng=rng, model_name="mlp"
-    )
-
     # Select probe points (inside the polytope)
     dists = min_face_slack(x_test, normals, radii)
     inside_mask = dists >= 0.0
     inside_idx = np.where(inside_mask)[0]
 
     if len(inside_idx) == 0:
-        raise RuntimeError("No inside test points — increase sampling region or faces configuration")
+        raise RuntimeError("No inside test points — increase sampling region")
 
     # Subsample for probing
     rng_idx = rng.choice(inside_idx, size=min(400, len(inside_idx)), replace=False)
     probe_points_all = x_test[rng_idx]
     probe_dists_all = dists[rng_idx]
 
-    # Get original outputs for both models
-    norm_model.eval()
-    mlp_model.eval()
+    # Define model configurations
+    model_configs = [
+        ModelConfig("norm", "norm", "ce"),
+        ModelConfig("mlp", "mlp", "ce"),
+        ModelConfig(f"mlp+gp(λ={lambda_grad})", "mlp", "grad_penalty", lambda_grad),
+        ModelConfig(f"norm+gp(λ={lambda_grad})", "norm", "grad_penalty", lambda_grad),
+    ]
 
-    with torch.no_grad():
-        x_t = torch.from_numpy(probe_points_all).to(device)
-        logits_orig_norm = norm_model(x_t).cpu().numpy().reshape(-1)
-        internal_orig_norm = norm_model.internal_scalar(x_t).cpu().numpy().reshape(-1)
-        logits_orig_mlp = mlp_model(x_t).cpu().numpy().reshape(-1)
-        internal_orig_mlp = mlp_model.internal_scalar(x_t).cpu().numpy().reshape(-1)
+    # Build and train all models
+    print("=" * 60)
+    print("Training models...")
+    print("=" * 60)
 
-    # Filter to confidently-correct points
+    model_states: list[ModelState] = []
+    for config in model_configs:
+        print(f"\n--- Training {config.name} ---")
+        # Use fresh RNG state for each model but deterministic based on seed
+        model_rng = np.random.default_rng(seed)
+        state = prepare_model(
+            config, x_train, y_train, probe_points_all,
+            epochs, device, model_rng
+        )
+        model_states.append(state)
+
+    # Filter to confidently-correct points (using first model as reference)
     true_labels = polytope_membership(probe_points_all, normals, radii)
-    confident_mask = (true_labels == 1.0) & (logits_orig_norm > float(tau))
+    reference_logits = model_states[0].logits_orig
+    confident_mask = (true_labels == 1.0) & (reference_logits > float(tau))
 
     if confident_mask.sum() == 0:
         print("Warning: no confidently-correct probe points; relaxing threshold.")
-        confident_mask = (true_labels == 1.0) & (logits_orig_norm > 0.0)
+        confident_mask = (true_labels == 1.0) & (reference_logits > 0.0)
 
     probe_points = probe_points_all[confident_mask]
     probe_dists = probe_dists_all[confident_mask]
-    logits_orig_norm = logits_orig_norm[confident_mask]
-    internal_orig_norm = internal_orig_norm[confident_mask]
-    logits_orig_mlp = logits_orig_mlp[confident_mask]
-    internal_orig_mlp = internal_orig_mlp[confident_mask]
+
+    # Update cached arrays in model states
+    for state in model_states:
+        state.logits_orig = state.logits_orig[confident_mask]
+        state.internal_orig = state.internal_orig[confident_mask]
+        state.grad_norms = state.grad_norms[confident_mask]
 
     if probe_points.shape[0] == 0:
         print("No probe points available after confidence filtering. Exiting.")
         return
 
-    # Compute gradient norms
-    grad_norms_norm = compute_gradient_norms(
-        norm_model, probe_points, get_internal_fn_norm, device
-    )
-    grad_norms_mlp = compute_gradient_norms(
-        mlp_model, probe_points, get_internal_fn_mlp, device
-    )
+    print(f"\nProbing {probe_points.shape[0]} points")
 
     # Prepare output directories
     out_base = out_dir or "results/exp_polytope_boundary_sensitivity"
@@ -156,137 +354,114 @@ def run_experiment(
     # Eps sweep
     eps_values = eps_list if eps_list is not None else [eps]
 
-    norm_results = ModelProbeResults(name="norm")
-    mlp_results = ModelProbeResults(name="mlp")
+    print("\n" + "=" * 60)
+    print("Probing at different epsilon values...")
+    print("=" * 60)
 
     for eps_val in eps_values:
-        # Probe perturbations for both models
-        flip_rates_norm, delta_logits_norm, delta_internal_norm = probe_perturbations(
-            norm_model, probe_points, logits_orig_norm, internal_orig_norm,
-            eps_val, n_perturb, rng, device
-        )
-        flip_rates_mlp, delta_logits_mlp, delta_internal_mlp = probe_perturbations(
-            mlp_model, probe_points, logits_orig_mlp, internal_orig_mlp,
-            eps_val, n_perturb, rng, device
-        )
-
-        # True flip rates
+        # Compute true flip rates (same for all models)
         true_flip_rates = compute_true_flip_rates(
             probe_points, eps_val, n_perturb, membership_fn, rng
         )
 
-        # Partition by distance bands
-        boundary_idx = (probe_dists >= 0.0) & (probe_dists <= eps_val)
-        interior_idx = probe_dists >= (5.0 * eps_val)
-
-        interior_count = int(np.sum(interior_idx))
-        interior_ok = interior_count >= min_interior
-
-        # Compute band statistics
-        boundary_stats_norm = BandStats.from_arrays(
-            boundary_idx, flip_rates_norm, true_flip_rates,
-            delta_logits_norm, delta_internal_norm, grad_norms_norm
-        )
-        interior_stats_norm = BandStats.from_arrays(
-            interior_idx, flip_rates_norm, true_flip_rates,
-            delta_logits_norm, delta_internal_norm, grad_norms_norm
-        ) if interior_ok else BandStats.nan()
-
-        boundary_stats_mlp = BandStats.from_arrays(
-            boundary_idx, flip_rates_mlp, true_flip_rates,
-            delta_logits_mlp, delta_internal_mlp, grad_norms_mlp
-        )
-        interior_stats_mlp = BandStats.from_arrays(
-            interior_idx, flip_rates_mlp, true_flip_rates,
-            delta_logits_mlp, delta_internal_mlp, grad_norms_mlp
-        ) if interior_ok else BandStats.nan()
-
-        norm_results.eps_summaries.append(EpsSummary(
-            eps=eps_val,
-            boundary_stats=boundary_stats_norm,
-            interior_stats=interior_stats_norm,
-            interior_ok=interior_ok,
-        ))
-        mlp_results.eps_summaries.append(EpsSummary(
-            eps=eps_val,
-            boundary_stats=boundary_stats_mlp,
-            interior_stats=interior_stats_mlp,
-            interior_ok=interior_ok,
-        ))
+        # Probe each model
+        for state in model_states:
+            summary = probe_model_at_eps(
+                state, probe_points, probe_dists, true_flip_rates,
+                eps_val, n_perturb, min_interior, rng, device
+            )
+            state.results.eps_summaries.append(summary)
 
         # Print summary
+        interior_ok = model_states[0].results.eps_summaries[-1].interior_ok
+        interior_count = int(np.sum(probe_dists >= 5.0 * eps_val))
+
         if not interior_ok:
-            print(f"\nEps={eps_val:.4f}: NOT ENOUGH interior probes (have={interior_count}, need={min_interior})")
+            print(f"\nEps={eps_val:.4f}: NOT ENOUGH interior probes "
+                  f"(have={interior_count}, need={min_interior})")
         else:
             print(f"\nEps={eps_val:.4f} Summary:")
-            print("model_flip, true_flip, mean|Δlogit|, mean|Δinternal|, mean|grad|")
-            print(f"boundary (norm): {np.array(boundary_stats_norm.as_tuple())}")
-            print(f"boundary (mlp):  {np.array(boundary_stats_mlp.as_tuple())}")
-            print(f"interior (norm): {np.array(interior_stats_norm.as_tuple())}")
-            print(f"interior (mlp):  {np.array(interior_stats_mlp.as_tuple())}")
+            print("-" * 60)
+            print(f"{'Model':<20} {'|Δlogit|':>10} {'|Δint|':>10} {'|∇|':>10}")
+            print("-" * 60)
+            for state in model_states:
+                s = state.results.eps_summaries[-1]
+                print(f"{state.config.name:<20} "
+                      f"{s.interior_stats.delta_logit:>10.4f} "
+                      f"{s.interior_stats.delta_internal:>10.4f} "
+                      f"{s.interior_stats.grad_norm:>10.4f}")
 
         # Save per-eps CSV
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         csv_name = f"probe_results_seed{seed}_eps{eps_val:.3f}_tau{tau:.2f}_{ts}.csv"
         csv_path = os.path.join(results_dir, csv_name)
 
-        with open(csv_path, "w", newline="") as cf:
+        with open(csv_path, "w", newline="", encoding="utf-8") as cf:
             writer = csv.writer(cf)
-            writer.writerow([
-                "idx", "min_face_slack",
-                "logit_orig_norm", "internal_orig_norm", "grad_norm_norm",
-                "logit_orig_mlp", "internal_orig_mlp", "grad_norm_mlp",
-                "flip_rate_norm", "flip_rate_mlp", "true_flip_rate",
-                "delta_logit_norm", "delta_logit_mlp",
-                "delta_internal_norm", "delta_internal_mlp",
-                "interior_ok",
-            ])
-            for i in range(probe_points.shape[0]):
-                writer.writerow([
-                    i, float(probe_dists[i]),
-                    float(logits_orig_norm[i]), float(internal_orig_norm[i]), float(grad_norms_norm[i]),
-                    float(logits_orig_mlp[i]), float(internal_orig_mlp[i]), float(grad_norms_mlp[i]),
-                    float(flip_rates_norm[i]), float(flip_rates_mlp[i]), float(true_flip_rates[i]),
-                    float(delta_logits_norm[i]), float(delta_logits_mlp[i]),
-                    float(delta_internal_norm[i]), float(delta_internal_mlp[i]),
-                    interior_ok,
+            # Header
+            header = ["idx", "min_face_slack"]
+            for state in model_states:
+                name = state.config.name.replace(" ", "_")
+                header.extend([
+                    f"logit_{name}", f"internal_{name}", f"grad_{name}",
+                    f"flip_rate_{name}", f"delta_logit_{name}", f"delta_internal_{name}"
                 ])
+            header.extend(["true_flip_rate", "interior_ok"])
+            writer.writerow(header)
+
+            # Data
+            for i in range(probe_points.shape[0]):
+                row = [i, float(probe_dists[i])]
+                for state in model_states:
+                    row.extend([
+                        float(state.logits_orig[i]),
+                        float(state.internal_orig[i]),
+                        float(state.grad_norms[i]),
+                        float(state.results.flip_rates[i]) if state.results.flip_rates is not None else float('nan'),
+                        float('nan'),  # delta_logit per-point not stored
+                        float('nan'),  # delta_internal per-point not stored
+                    ])
+                row.extend([float(true_flip_rates[i]), interior_ok])
+                writer.writerow(row)
         print(f"Saved CSV: {csv_path}")
 
-    # Store final probe data for plotting
-    norm_results.probe_dists = probe_dists
-    norm_results.flip_rates = flip_rates_norm
-    norm_results.true_flip_rates = true_flip_rates
-    mlp_results.probe_dists = probe_dists
-    mlp_results.flip_rates = flip_rates_mlp
-    mlp_results.true_flip_rates = true_flip_rates
-
     # Aggregate summary
-    model_results = [norm_results, mlp_results]
+    model_results = [state.results for state in model_states]
 
     if eps_list is not None:
-        valid_norm = [s for s in norm_results.eps_summaries if s.interior_ok]
-        if valid_norm:
-            print(f"\nAggregate over eps sweep (mean over {len(valid_norm)} eps with interior_ok=True):")
-            b_mean = np.mean([s.boundary_stats.as_tuple() for s in valid_norm], axis=0)
-            i_mean = np.mean([s.interior_stats.as_tuple() for s in valid_norm], axis=0)
-            valid_mlp = [s for s in mlp_results.eps_summaries if s.interior_ok]
-            bm_mean = np.mean([s.boundary_stats.as_tuple() for s in valid_mlp], axis=0)
-            im_mean = np.mean([s.interior_stats.as_tuple() for s in valid_mlp], axis=0)
-            print("model_flip, true_flip, mean|Δlogit|, mean|Δinternal|, mean|grad|")
-            print(f"boundary (norm mean): {b_mean}")
-            print(f"interior (norm mean): {i_mean}")
-            print(f"boundary (mlp mean):  {bm_mean}")
-            print(f"interior (mlp mean):  {im_mean}")
+        print("\n" + "=" * 60)
+        print("Aggregate Summary (mean over eps with valid interior)")
+        print("=" * 60)
+
+        # Compute ratios relative to norm model
+        norm_state = model_states[0]
+        valid_summaries = [s for s in norm_state.results.eps_summaries if s.interior_ok]
+
+        if valid_summaries:
+            print(f"\nInterior metrics (mean over {len(valid_summaries)} eps values):")
+            print("-" * 70)
+            print(f"{'Model':<20} {'|Δlogit|':>10} {'|∇|':>10} {'Ratio vs norm':>15}")
+            print("-" * 70)
+
+            # Get norm baseline mean gradient
+            norm_grad = np.mean([s.interior_stats.grad_norm for s in valid_summaries])
+
+            for state in model_states:
+                valid = [s for s in state.results.eps_summaries if s.interior_ok]
+                if valid:
+                    delta = np.mean([s.interior_stats.delta_logit for s in valid])
+                    grad = np.mean([s.interior_stats.grad_norm for s in valid])
+                    ratio = grad / norm_grad if norm_grad > 0 else float('nan')
+                    print(f"{state.config.name:<20} {delta:>10.4f} {grad:>10.4f} {ratio:>15.2f}×")
         else:
             print("\nNo eps values had sufficient interior probes")
 
     # Generate plots
     if eps_list is not None and len(eps_values) > 1:
-        eps_vals = [s.eps for s in norm_results.eps_summaries]
-        interior_ok_list = [s.interior_ok for s in norm_results.eps_summaries]
-        true_flip_boundary = [s.boundary_stats.true_flip for s in norm_results.eps_summaries]
-        true_flip_interior = [s.interior_stats.true_flip for s in norm_results.eps_summaries]
+        eps_vals = [s.eps for s in model_states[0].results.eps_summaries]
+        interior_ok_list = [s.interior_ok for s in model_states[0].results.eps_summaries]
+        true_flip_boundary = [s.boundary_stats.true_flip for s in model_states[0].results.eps_summaries]
+        true_flip_interior = [s.interior_stats.true_flip for s in model_states[0].results.eps_summaries]
 
         plot_flip_rate_vs_eps(
             eps_vals, model_results, true_flip_boundary, true_flip_interior,
@@ -309,9 +484,43 @@ def run_experiment(
         save_path=os.path.join(out_base, 'flip_rate_vs_distance.png')
     )
 
+    # Print hypothesis evaluation
+    print("\n" + "=" * 60)
+    print("Hypothesis Evaluation")
+    print("=" * 60)
+
+    if eps_list is not None:
+        valid_norm = [s for s in model_states[0].results.eps_summaries if s.interior_ok]
+        valid_mlp = [s for s in model_states[1].results.eps_summaries if s.interior_ok]
+        valid_mlp_gp = [s for s in model_states[2].results.eps_summaries if s.interior_ok]
+
+        if valid_norm and valid_mlp and valid_mlp_gp:
+            norm_grad = np.mean([s.interior_stats.grad_norm for s in valid_norm])
+            mlp_grad = np.mean([s.interior_stats.grad_norm for s in valid_mlp])
+            mlp_gp_grad = np.mean([s.interior_stats.grad_norm for s in valid_mlp_gp])
+
+            ratio_mlp = mlp_grad / norm_grad if norm_grad > 0 else float('nan')
+            ratio_mlp_gp = mlp_gp_grad / norm_grad if norm_grad > 0 else float('nan')
+
+            print(f"\nInterior |∇| ratios:")
+            print(f"  MLP / Norm:      {ratio_mlp:.2f}×")
+            print(f"  MLP+GP / Norm:   {ratio_mlp_gp:.2f}×")
+
+            if ratio_mlp_gp < 2.0:
+                print("\n→ H1 SUPPORTED: Gradient penalty closes the gap.")
+                print("  Mesa geometry is loss-inducible; norm aggregation is one path among several.")
+            elif ratio_mlp_gp < 5.0:
+                print("\n→ H2 SUPPORTED: Gradient penalty partially closes the gap.")
+                print("  GP helps but doesn't fully replicate architectural constraint.")
+            else:
+                print("\n→ H3 SUPPORTED: Gradient penalty doesn't significantly help.")
+                print("  Gradient magnitude ≠ mesa geometry; norm aggregation does something else.")
+
 
 def parse_args():
-    p = argparse.ArgumentParser()
+    p = argparse.ArgumentParser(
+        description="Polytope boundary sensitivity with loss variants"
+    )
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--eps", type=float, default=0.1)
     p.add_argument("--eps-list", type=str, default="0.02,0.05,0.1,0.2",
@@ -322,6 +531,8 @@ def parse_args():
                    help="confidence margin threshold for probe selection")
     p.add_argument("--min-interior", type=int, default=20,
                    help="minimum interior probes required per-eps")
+    p.add_argument("--lambda-grad", type=float, default=0.1,
+                   help="gradient penalty weight for GP variants")
     p.add_argument("--out-dir", type=str, default=None)
     return p.parse_args()
 
@@ -340,4 +551,5 @@ if __name__ == "__main__":
         tau=args.tau,
         eps_list=eps_list,
         min_interior=args.min_interior,
+        lambda_grad=args.lambda_grad,
     )

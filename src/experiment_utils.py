@@ -96,6 +96,8 @@ def train_model(
     verbose: bool = True,
     model_name: str = "model",
     log_interval: int | None = None,
+    loss_type: str = "ce",
+    lambda_grad: float = 0.1,
 ) -> float:
     """Train a model with the standard training loop.
 
@@ -111,6 +113,8 @@ def train_model(
         verbose: Whether to print progress
         model_name: Name for logging
         log_interval: How often to log (default: epochs // 5)
+        loss_type: Loss function type ("ce", "grad_penalty", "confidence")
+        lambda_grad: Weight for gradient penalty (only used if loss_type="grad_penalty")
 
     Returns:
         Final training loss
@@ -138,18 +142,21 @@ def train_model(
             idx = perm[i * batch_size : (i + 1) * batch_size]
             xb = x_train_t[idx].to(device)
             yb = y_train_t[idx].to(device)
-            loss = train_step(model, opt, xb, yb)
+            loss = train_step(model, opt, xb, yb, loss_type=loss_type, lambda_grad=lambda_grad)
             ep_loss += loss
 
         if verbose and (ep + 1) % log_interval == 0:
             avg_loss = ep_loss / n_batches
             # Try to get p value for norm models
             p_str = ""
-            try:
-                pval = model.block.norm.p().item()
-                p_str = f" p={pval:.4f}"
-            except (AttributeError, Exception):
-                pass
+            if hasattr(model, 'p_mean'):
+                pval = model.p_mean()
+                pvar = model.p_variance()
+                p_str = f" p_mean={pval:.4f} p_var={pvar:.4f}"
+            # try:
+            # except (AttributeError, Exception) as e:
+            #     print(e)
+            #     pass
             print(f"{model_name} epoch {ep+1}/{epochs} loss={avg_loss:.4f}{p_str}")
 
     final_loss = ep_loss / n_batches

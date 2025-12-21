@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 
 
-def train_step(model, opt, x, y, loss_type="ce", lambda_grad=0.1):
+def train_step(model, opt, x, y, loss_type="ce", lambda_grad=0.1, max_grad_norm=1.0):
     """
     x: (batch, in_dim)
     y: (batch, 1) in {0,1}
@@ -40,5 +40,21 @@ def train_step(model, opt, x, y, loss_type="ce", lambda_grad=0.1):
         raise ValueError(f"Unknown loss_type: {loss_type}")
     
     loss.backward()
+
+    # Check for NaN gradients
+    has_nan = False
+    for name, param in model.named_parameters():
+        if param.grad is not None and torch.isnan(param.grad).any():
+            print(f"NaN gradient in {name}")
+            has_nan = True
+    
+    if has_nan:
+        print(f"Skipping step due to NaN gradients (loss={loss.item():.4f})")
+        opt.zero_grad(set_to_none=True)  # Clear the bad gradients
+        return float('nan')
+    
+    if max_grad_norm is not None:
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
+
     opt.step()
     return float(loss.detach())

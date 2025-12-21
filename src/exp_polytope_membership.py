@@ -1,7 +1,30 @@
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
-from blocks import PolytopeClassifier
+from lp_norm_layer import LpNormLayer
 from train_utils import train_step
+
+
+class PolytopeClassifier(nn.Module):
+    """Norm-based binary classifier: Linear -> ReLU -> NormLayer -> Linear head."""
+    def __init__(self, in_dim: int, hidden_dim: int, learn_p: bool = True, p_init: float = 2.0):
+        super().__init__()
+        self.lin = nn.Linear(in_dim, hidden_dim)
+        self.norm = LpNormLayer(hidden_dim, out_dim=1, learn_p=learn_p, p_init=p_init)
+        self.head = nn.Linear(1, 1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        v = F.relu(self.lin(x))
+        d = self.norm(v)  # (batch, 1)
+        logits = self.head(d)
+        return logits
+    
+    def p_mean(self):
+        return self.norm.p.mean().detach().cpu()
+    
+    def p_variance(self):
+        return self.norm.p.var(unbiased=False).detach().cpu()
 
 
 if __name__ == "__main__":
@@ -24,4 +47,4 @@ if __name__ == "__main__":
         loss = train_step(model, opt, x, y)
 
     # Inspect learned p
-    print("Learned p:", float(model.block.norm.p().detach()))
+    print("Learned p:", model.norm._raw_p.detach())
