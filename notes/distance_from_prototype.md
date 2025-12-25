@@ -134,6 +134,45 @@ The mesa interpretation aligns with the latter. The prototype is:
 
 Inputs inside the mesa are equally "cat-like." Deviations from the mesa indicate how far from cat-ness the input lies.
 
+### The Distance Landscape Beyond the Mesa
+
+The mesa is the global minimum of the distance function—the region of zero distance. But the distance surface has structure beyond this plateau.
+
+Consider a class with two distinct clusters. A single convex polytope cannot enclose both. The network may learn a mesa that covers one cluster while the other lies outside, at positive distance. Does this break the prototype interpretation?
+
+No. Classification is comparative, not absolute.
+
+**Anchors, Not Containers**
+
+The mesa need not enclose all class members. It serves as an anchor—a reference point for distance computation. Class membership is determined by relative distance: which class's prototype is closer?
+
+For a bimodal class:
+- One cluster may lie inside the mesa (distance = 0)
+- The other cluster lies outside (distance > 0) but still closer to this mesa than to competing class prototypes
+
+Both clusters are classified correctly. The mesa anchors the distance function; it doesn't contain the class.
+
+**Local Minima in the Distance Surface**
+
+The distance function can have local structure beyond the global minimum. A secondary cluster, while not at zero distance, may sit in a local valley—a region where distance is lower than the surrounding space.
+
+In probabilistic terms, if probability ∝ exp(-distance):
+- The mesa is the mode (global maximum probability)
+- Secondary clusters occupy local probability peaks
+- Classification compares these surfaces across classes
+
+**What Training Actually Optimizes**
+
+Cross-entropy loss doesn't require each class's points to be inside a mesa. It requires each point to have lower distance to its own class than to others.
+
+Training optimizes: "position your prototype so your points are closer to it than to competing prototypes."
+
+This is weaker than enclosure. A well-positioned anchor can correctly classify points that lie outside its mesa, as long as they're even further from other anchors.
+
+**Implications**
+
+The prototype-as-region interpretation survives multimodal distributions. The mesa remains meaningful as the core of the class—the region of maximal typicality—while the broader distance landscape captures secondary structure. The framework describes not just the plateau, but the entire topography of learned class representations.
+
 ## Formal Structure: Polyhedral Mesa Gaussians
 
 The distance-from-prototype interpretation is formalized by the Polyhedral Mesa Gaussian:
